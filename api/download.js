@@ -1,12 +1,51 @@
+// api/download.js
 export default async function handler(req, res) {
+  // CORS headers
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(200).end();
+  }
+
   if (req.method !== 'POST') {
-    return res.status(405).json({ error: 'Method not allowed' });
+    return res.status(405).json({ success: false, error: 'Method not allowed' });
   }
 
   const { url } = req.body;
+
+  // التحقق من وجود الرابط
+  if (!url || typeof url !== 'string') {
+    return res.status(400).json({ success: false, error: 'URL is required' });
+  }
+
+  // التحقق من صحة الرابط
+  const supportedPlatforms = [
+    'tiktok.com', 'youtube.com', 'youtu.be', 
+    'instagram.com', 'facebook.com', 'fb.watch'
+  ];
   
-  if (!url) {
-    return res.status(400).json({ error: 'URL required' });
+  const isValidUrl = supportedPlatforms.some(platform => url.includes(platform));
+  
+  if (!isValidUrl) {
+    return res.status(400).json({ 
+      success: false, 
+      error: 'Unsupported platform. Supported: TikTok, YouTube, Instagram, Facebook' 
+    });
+  }
+
+  // التحقق من وجود مفتاح API
+  const apiKey = process.env.RAPIDAPI_KEY;
+  
+  if (!apiKey) {
+    console.warn('RAPIDAPI_KEY not set, returning mock data');
+    return res.status(200).json({ 
+      success: true, 
+      demo: true, 
+      message: 'Running in demo mode - add RAPIDAPI_KEY to .env',
+      data: generateMockData(url) 
+    });
   }
 
   try {
@@ -15,23 +54,27 @@ export default async function handler(req, res) {
       headers: {
         'Content-Type': 'application/json',
         'x-rapidapi-host': 'social-media-video-downloader.p.rapidapi.com',
-        'x-rapidapi-key': process.env.RAPIDAPI_KEY || '8722737439msh1024658240cb70ep195e7ajsn728f1e4e696d'
+        'x-rapidapi-key': apiKey
       },
       body: JSON.stringify({ url })
     });
 
     if (!response.ok) {
-      throw new Error('API request failed');
+      const errorText = await response.text();
+      throw new Error(`API Error ${response.status}: ${errorText}`);
     }
 
     const data = await response.json();
     return res.status(200).json({ success: true, data });
     
   } catch (error) {
-    console.error('API Error:', error);
+    console.error('API Error:', error.message);
+    
+    // في حالة فشل الـ API، نرجع mock data مع توضيح
     return res.status(200).json({ 
       success: true, 
       demo: true,
+      message: 'API temporarily unavailable, showing demo data',
       data: generateMockData(url)
     });
   }
@@ -41,7 +84,7 @@ function generateMockData(url) {
   let platform = 'TikTok';
   if (url.includes('youtube') || url.includes('youtu.be')) platform = 'YouTube';
   else if (url.includes('instagram')) platform = 'Instagram';
-  else if (url.includes('facebook')) platform = 'Facebook';
+  else if (url.includes('facebook') || url.includes('fb.watch')) platform = 'Facebook';
 
   const mockData = {
     TikTok: {
